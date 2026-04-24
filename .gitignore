@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+
+# SSL certificates — placed by Linux admin
+ssl/authcloak.crt
+ssl/authcloak.key
+ssl/*.pem
+ssl/*.key
+ssl/*.crt
+
+# Backups
+backups/
+
+# Docker build cache artifacts
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db

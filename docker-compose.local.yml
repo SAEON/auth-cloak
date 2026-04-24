@@ -1,0 +1,19 @@
+# Local WSL testing overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Differences from prod:
+#   - KC_HOSTNAME=localhost (set in .env)
+#   - KC_HOSTNAME_STRICT=false (accepts requests on any hostname)
+#   - Nginx uses localhost nginx conf (no IP restriction on /admin)
+#   - Self-signed cert for localhost in ssl/
+
+services:
+  keycloak:
+    environment:
+      KC_HOSTNAME_STRICT: "false"
+
+  nginx:
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d.local:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro

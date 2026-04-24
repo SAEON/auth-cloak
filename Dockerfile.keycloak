@@ -1,0 +1,21 @@
+# Two-stage build: stage 1 runs the Quarkus augmentation (kc.sh build) so the
+# final image starts with --optimized in seconds rather than minutes.
+FROM quay.io/keycloak/keycloak:26.1.2 AS builder
+
+ENV KC_DB=postgres
+ENV KC_HTTP_ENABLED=true
+ENV KC_HEALTH_ENABLED=true
+ENV KC_METRICS_ENABLED=true
+ENV KC_CACHE=local
+
+RUN /opt/keycloak/bin/kc.sh build
+
+# ── Final image ───────────────────────────────────────────────────────────────
+FROM quay.io/keycloak/keycloak:26.1.2
+
+COPY --from=builder /opt/keycloak/lib/quarkus/ /opt/keycloak/lib/quarkus/
+
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
+# --import-realm: auto-imports JSON files from /opt/keycloak/data/import/
+#                 on first start; skips realms that already exist.
+CMD ["start", "--optimized", "--import-realm"]
