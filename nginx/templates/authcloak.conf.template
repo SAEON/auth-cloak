@@ -24,9 +24,9 @@ server {
     server_name _;
 
     # ── TLS ──────────────────────────────────────────────────────────────────
-    ssl_certificate         /etc/nginx/ssl/fullchain.pem;
-    ssl_certificate_key     /etc/nginx/ssl/privkey.pem;
-    ssl_trusted_certificate /etc/nginx/ssl/chain.pem;
+    ssl_certificate         ${SSL_CERT_DIR}/fullchain.pem;
+    ssl_certificate_key     ${SSL_CERT_DIR}/privkey.pem;
+    ssl_trusted_certificate ${SSL_CERT_DIR}/chain.pem;
 
     ssl_protocols             TLSv1.2 TLSv1.3;
     ssl_ciphers               ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256;

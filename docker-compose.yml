@@ -124,12 +124,13 @@ services:
     environment:
       ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR}
       ADMIN_ALLOWED_CIDR_2: ${ADMIN_ALLOWED_CIDR_2}
+      SSL_CERT_DIR: ${SSL_CERT_DIR}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
       - /dev/null:/etc/nginx/conf.d/default.conf:ro
-      # SSL cert directory — set SSL_CERT_DIR in .env
-      - ${SSL_CERT_DIR}:/etc/nginx/ssl:ro
+      # Mount full letsencrypt tree so symlinks in live/ resolve to archive/
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost/health || exit 1"]
       interval: 30s
