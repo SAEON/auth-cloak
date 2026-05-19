@@ -62,8 +62,7 @@ docker compose -f "$REPO_DIR/docker-compose.yml" up -d --no-deps keycloak
 step "Waiting for Keycloak health"
 MAX_WAIT=240
 ELAPSED=0
-until docker compose -f "$REPO_DIR/docker-compose.yml" exec -T keycloak \
-        curl -sf http://localhost:9000/health/ready >/dev/null 2>&1; do
+until [[ "$(docker inspect --format='{{.State.Health.Status}}' auth-cloak-keycloak 2>/dev/null)" == "healthy" ]]; do
     if [[ $ELAPSED -ge $MAX_WAIT ]]; then
         error "Keycloak failed health check within ${MAX_WAIT}s.
        Check:  docker compose logs keycloak

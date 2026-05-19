@@ -4,8 +4,7 @@
 # Differences from prod:
 #   - KC_HOSTNAME=localhost (set in .env)
 #   - KC_HOSTNAME_STRICT=false (accepts requests on any hostname)
-#   - Nginx uses localhost nginx conf (no IP restriction on /admin)
-#   - Self-signed cert for localhost in ssl/
+#   - ADMIN_ALLOWED_CIDR=0.0.0.0/0 (no IP restriction on /admin for local testing)
 
 services:
   keycloak:
@@ -13,7 +12,5 @@ services:
       KC_HOSTNAME_STRICT: "false"
 
   nginx:
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d.local:/etc/nginx/conf.d:ro
-      - ./ssl:/etc/nginx/ssl:ro
+    environment:
+      ADMIN_ALLOWED_CIDR: "0.0.0.0/0"

@@ -121,11 +121,15 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR}
+      ADMIN_ALLOWED_CIDR_2: ${ADMIN_ALLOWED_CIDR_2}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # SSL certs placed by Linux admin; gitignored
-      - ./ssl:/etc/nginx/ssl:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - /dev/null:/etc/nginx/conf.d/default.conf:ro
+      # SSL cert directory — set SSL_CERT_DIR in .env
+      - ${SSL_CERT_DIR}:/etc/nginx/ssl:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost/health || exit 1"]
       interval: 30s

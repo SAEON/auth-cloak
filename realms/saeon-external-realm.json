@@ -1,7 +1,7 @@
 {
   "realm": "saeon-external",
-  "displayName": "SAEON External Portal",
-  "displayNameHtml": "<strong>SAEON</strong> External Portal",
+  "displayName": "SAEON External",
+  "displayNameHtml": "<strong>SAEON</strong> External",
   "enabled": true,
 
   "registrationAllowed": true,
@@ -143,6 +143,70 @@
             "multivalued": "false",
             "aggregate.attrs": "false"
           }
+        },
+        {
+          "name": "student-status-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "student_status",
+            "claim.name": "student_status",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "age-group-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "age_group",
+            "claim.name": "age_group",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "race-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "race",
+            "claim.name": "race",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "gender-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "gender",
+            "claim.name": "gender",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
         }
       ]
     }
@@ -169,7 +233,7 @@
         "subComponents": {},
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"First Name\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"min\":1,\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"Last Name\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"min\":1,\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"institution\",\"displayName\":\"Education / Research Institution\",\"required\":{\"roles\":[\"user\"]},\"annotations\":{\"inputHelperTextBefore\":\"Enter the full name of your institution, university, or employer\"},\"validations\":{\"length\":{\"min\":2,\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"user_type\",\"displayName\":\"User Type\",\"validations\":{\"options\":{\"options\":[\"guest\",\"registered\",\"staff\"]}},\"annotations\":{\"inputType\":\"select\"},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}}],\"groups\":[{\"name\":\"basic\",\"displayHeader\":\"Basic Information\",\"displayDescription\":\"Your contact details\"},{\"name\":\"research\",\"displayHeader\":\"Research Profile\",\"displayDescription\":\"Help us understand how you use SAEON data and services\"}]}"
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"First Name\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"min\":1,\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"Last Name\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"min\":1,\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"institution\",\"displayName\":\"Education / Research Institution\",\"required\":{\"roles\":[\"user\"]},\"annotations\":{\"inputHelperTextBefore\":\"Enter the full name of your institution, university, or employer\"},\"validations\":{\"length\":{\"min\":2,\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"user_type\",\"displayName\":\"User Type\",\"validations\":{\"options\":{\"options\":[\"guest\",\"registered\",\"staff\"]}},\"annotations\":{\"inputType\":\"select\"},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"student_status\",\"displayName\":\"Are you a student?\",\"validations\":{\"options\":{\"options\":[\"yes\",\"no\",\"na\"]}},\"annotations\":{\"inputType\":\"select\"},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"age_group\",\"displayName\":\"Age Group\",\"validations\":{\"options\":{\"options\":[\"under-18\",\"18-24\",\"25-34\",\"35-44\",\"45-54\",\"55-64\",\"65+\"]}},\"annotations\":{\"inputType\":\"select\"},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"race\",\"displayName\":\"Race\",\"validations\":{\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"gender\",\"displayName\":\"Gender\",\"validations\":{\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}}],\"groups\":[{\"name\":\"basic\",\"displayHeader\":\"Basic Information\",\"displayDescription\":\"Your contact details\"},{\"name\":\"research\",\"displayHeader\":\"Research Profile\",\"displayDescription\":\"Help us understand how you use SAEON data and services\"}]}"
           ]
         }
       }

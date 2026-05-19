@@ -32,27 +32,31 @@ command -v openssl        >/dev/null 2>&1 || error "openssl not installed"
 step ".env configuration"
 
 if [[ ! -f .env ]]; then
-    warn ".env not found — generating from .env.example with random secrets"
+    warn ".env not found — copying from .env.example"
     cp .env.example .env
+    chmod 600 .env
+    # Return ownership to the calling user so non-root docker commands work
+    [[ -n "${SUDO_USER:-}" ]] && chown "${SUDO_USER}:${SUDO_USER}" .env
+fi
 
-    PG_PASS=$(openssl rand -base64 40 | tr -dc 'a-zA-Z0-9!@#$%^&*' | head -c 48)
-    KC_PASS=$(openssl rand -base64 40 | tr -dc 'a-zA-Z0-9!@#$%^&*' | head -c 48)
+# Replace any remaining CHANGE_ME password placeholders with generated secrets
+if grep -q "CHANGE_ME_strong_random_password" .env; then
+    PG_PASS=$(openssl rand -base64 40 | tr -dc 'a-zA-Z0-9!@#$%^*' | head -c 48)
+    KC_PASS=$(openssl rand -base64 40 | tr -dc 'a-zA-Z0-9!@#$%^*' | head -c 48)
 
-    # Replace the two CHANGE_ME placeholders (first = PG, second = KC)
     sed -i "0,/CHANGE_ME_strong_random_password/s//${PG_PASS}/" .env
     sed -i "0,/CHANGE_ME_strong_random_password/s//${KC_PASS}/" .env
 
-    chmod 600 .env
-    info ".env created with generated secrets."
+    info "Generated secrets for POSTGRES_PASSWORD and KC_BOOTSTRAP_ADMIN_PASSWORD."
     echo ""
     echo -e "  ${BOLD}Bootstrap admin credentials (record these now):${NC}"
     echo -e "  Username: $(grep KC_BOOTSTRAP_ADMIN_USERNAME .env | cut -d= -f2)"
-    echo -e "  Password: $(grep KC_BOOTSTRAP_ADMIN_PASSWORD .env | cut -d= -f2)"
+    echo -e "  Password: ${KC_PASS}"
     echo ""
     warn "Change the admin password immediately after first login."
     warn "Create a real admin user, then disable the bootstrap account."
 else
-    info ".env already exists — skipping secret generation."
+    info ".env already has secrets — skipping secret generation."
 fi
 
 # Load env for validation steps
@@ -60,18 +64,30 @@ set -o allexport
 source .env
 set +o allexport
 
+# ── Prompt for hostname if still a placeholder ────────────────────────────────
+if [[ "$KC_HOSTNAME" == "CHANGE_ME"* ]]; then
+    read -rp "Enter the public hostname for this Keycloak instance (e.g. auth.example.org): " KC_HOSTNAME
+    [[ -n "$KC_HOSTNAME" ]] || error "Hostname cannot be empty."
+    sed -i "s|KC_HOSTNAME=.*|KC_HOSTNAME=${KC_HOSTNAME}|" .env
+    info "KC_HOSTNAME set to ${KC_HOSTNAME}."
+fi
+
+# ── Derive SSL_CERT_DIR from hostname if still a placeholder ──────────────────
+if [[ "$SSL_CERT_DIR" == *"CHANGE_ME"* ]]; then
+    SSL_CERT_DIR="/etc/letsencrypt/live/${KC_HOSTNAME}"
+    sed -i "s|SSL_CERT_DIR=.*|SSL_CERT_DIR=${SSL_CERT_DIR}|" .env
+    info "SSL_CERT_DIR set to ${SSL_CERT_DIR}."
+fi
+
 # ── SSL certificates ──────────────────────────────────────────────────────────
 step "SSL certificate check"
-
-[[ -f ssl/authcloak.crt ]] || error "ssl/authcloak.crt not found. See ssl/README.md."
-[[ -f ssl/authcloak.key ]] || error "ssl/authcloak.key not found. See ssl/README.md."
-
-chmod 644 ssl/authcloak.crt
-chmod 640 ssl/authcloak.key
-info "SSL certs found and permissions set."
+[[ -f "${SSL_CERT_DIR}/fullchain.pem" ]] || error "SSL cert not found: ${SSL_CERT_DIR}/fullchain.pem"
+[[ -f "${SSL_CERT_DIR}/privkey.pem"   ]] || error "SSL key not found: ${SSL_CERT_DIR}/privkey.pem"
+[[ -f "${SSL_CERT_DIR}/chain.pem"     ]] || error "SSL chain not found: ${SSL_CERT_DIR}/chain.pem"
+info "SSL certs found at ${SSL_CERT_DIR}."
 
 # ── Backup directory ──────────────────────────────────────────────────────────
-BACKUP_DIR="${BACKUP_DIR:-/opt/auth-cloak/backups}"
+BACKUP_DIR="${BACKUP_DIR:-/opt/apps/auth-cloak/backups}"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 info "Backup directory: $BACKUP_DIR"
@@ -94,7 +110,7 @@ info "Containers started."
 step "Waiting for Keycloak to be ready"
 MAX_WAIT=240
 ELAPSED=0
-until docker compose exec -T keycloak curl -sf http://localhost:9000/health/ready >/dev/null 2>&1; do
+until [[ "$(docker inspect --format='{{.State.Health.Status}}' auth-cloak-keycloak 2>/dev/null)" == "healthy" ]]; do
     if [[ $ELAPSED -ge $MAX_WAIT ]]; then
         error "Keycloak did not become healthy within ${MAX_WAIT}s.
        Check logs: docker compose logs keycloak"
@@ -114,7 +130,7 @@ info "External realm account:   https://${KC_HOSTNAME}/realms/saeon-external/acc
 info "Internal realm account:   https://${KC_HOSTNAME}/realms/saeon-internal/account"
 echo ""
 warn "Next steps:"
-echo "  1. Log into the admin console from the LAN (192.168.117.x)"
+echo "  1. Log into the admin console from your LAN/VPN"
 echo "  2. Change the bootstrap admin password"
 echo "  3. Create a permanent admin user with TOTP (2FA) enforced"
 echo "  4. Disable/delete the bootstrap admin account"
