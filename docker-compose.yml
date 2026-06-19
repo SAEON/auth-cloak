@@ -68,8 +68,8 @@ services:
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       # ── Hostname / Proxy ─────────────────────────────────────────────────────
-      KC_HOSTNAME:                  ${KC_HOSTNAME}
-      KC_HOSTNAME_STRICT:           "true"
+      # KC_HOSTNAME removed — frontend URL derived from X-Forwarded-Host set by nginx
+      KC_HOSTNAME_STRICT:           "false"
       KC_HTTP_ENABLED:              "true"
       KC_PROXY_HEADERS:             xforwarded
       # Trust X-Forwarded-* headers only from the Docker bridge range (nginx only)
