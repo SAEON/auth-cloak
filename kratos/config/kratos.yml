@@ -1,6 +1,6 @@
 version: v0.13.0
 
-dsn: postgres://${POSTGRES_USER}:${POSTGRES_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&max_conns=10&max_idle_conns=4
+# DSN is set via the DSN environment variable in docker-compose.yml
 
 serve:
   public:
