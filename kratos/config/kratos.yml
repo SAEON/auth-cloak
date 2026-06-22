@@ -1,14 +1,14 @@
 version: v0.13.0
 
-# DSN is set via the DSN environment variable in docker-compose.yml
+# All dynamic values (DSN, secrets, URLs) are injected via environment variables
+# in docker-compose.yml using the KRATOS_* override format.
 
 serve:
   public:
-    base_url: https://${KRATOS_HOSTNAME}/identity/
+    # Overridden by KRATOS_SERVE_PUBLIC_BASE_URL env var
+    base_url: http://localhost/identity/
     cors:
       enabled: true
-      allowed_origins:
-        - https://${FDS_HOSTNAME}
       allowed_methods:
         - GET
         - POST
@@ -26,39 +26,31 @@ serve:
     base_url: http://0.0.0.0:4434/
 
 selfservice:
-  default_browser_return_url: https://${FDS_HOSTNAME}/
-  allowed_return_urls:
-    - https://${FDS_HOSTNAME}
+  # Overridden by KRATOS_SELFSERVICE_DEFAULT_BROWSER_RETURN_URL env var
+  default_browser_return_url: http://localhost/
 
   flows:
     login:
-      # ui_url is required but never used in Native mode — PWA calls the API directly
-      ui_url: https://${FDS_HOSTNAME}/login
+      ui_url: http://localhost/login
       lifespan: 10m
-
     registration:
-      ui_url: https://${FDS_HOSTNAME}/register
+      ui_url: http://localhost/register
       lifespan: 10m
-      # Registration disabled — accounts are created via Admin API only
       enabled: false
-
     settings:
-      ui_url: https://${FDS_HOSTNAME}/settings
+      ui_url: http://localhost/settings
       privileged_session_max_age: 15m
-
     recovery:
       enabled: false
-      ui_url: https://${FDS_HOSTNAME}/recovery
-
+      ui_url: http://localhost/recovery
     verification:
       enabled: false
-      ui_url: https://${FDS_HOSTNAME}/verification
+      ui_url: http://localhost/verification
 
   methods:
     password:
       enabled: true
       config:
-        # Argon2 tuning — conservative defaults for single-node server
         min_password_length: 8
         identifier_similarity_check_enabled: true
 
@@ -78,20 +70,14 @@ log:
   format: json
   leak_sensitive_values: false
 
-secrets:
-  cookie:
-    - ${KRATOS_COOKIE_SECRET}
-  cipher:
-    - ${KRATOS_CIPHER_SECRET}
-
-ciphers:
-  algorithm: xchacha20-poly1305
-
 hashers:
   algorithm: argon2
   argon2:
     parallelism: 1
-    memory: 131072   # 128 MB
+    memory: 128MB
     iterations: 3
     salt_length: 16
     key_length: 32
+
+ciphers:
+  algorithm: xchacha20-poly1305
