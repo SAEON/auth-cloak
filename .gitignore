@@ -1,5 +1,6 @@
 # Secrets — never commit
 .env
+kratos/config/kratos.secrets.yml
 
 # SSL certificates — placed by Linux admin
 ssl/authcloak.crt

@@ -95,6 +95,18 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 info "Backup directory: $BACKUP_DIR"
 
+# ── Generate Kratos secrets config ───────────────────────────────────────────
+step "Generating Kratos secrets config"
+cat > kratos/config/kratos.secrets.yml <<EOF
+secrets:
+  cookie:
+    - ${KRATOS_COOKIE_SECRET}
+  cipher:
+    - ${KRATOS_CIPHER_SECRET}
+EOF
+chmod 600 kratos/config/kratos.secrets.yml
+info "kratos/config/kratos.secrets.yml written."
+
 # ── Pull images ───────────────────────────────────────────────────────────────
 step "Pulling images"
 docker compose pull postgres kratos nginx
