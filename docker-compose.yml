@@ -9,7 +9,6 @@ networks:
 
 volumes:
   postgres_data:
-  keycloak_data:
 
 services:
 
@@ -47,66 +46,42 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # ── Keycloak 26 ─────────────────────────────────────────────────────────────
-  keycloak:
-    build:
-      context: .
-      dockerfile: Dockerfile.keycloak
-    image: auth-cloak/keycloak:26.1.2
-    container_name: auth-cloak-keycloak
+  # ── Ory Kratos ───────────────────────────────────────────────────────────────
+  kratos:
+    image: oryd/kratos:v1.3
+    container_name: auth-cloak-kratos
     restart: unless-stopped
+    command: serve -c /etc/config/kratos/kratos.yml --dev=false
     networks:
-      - backend
       - frontend
+      - backend
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      # ── Database ─────────────────────────────────────────────────────────────
-      KC_DB:          postgres
-      KC_DB_URL:      jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      KC_DB_USERNAME: ${POSTGRES_USER}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      # ── Hostname / Proxy ─────────────────────────────────────────────────────
-      # KC_HOSTNAME removed — frontend URL derived from X-Forwarded-Host set by nginx
-      KC_HOSTNAME_STRICT:           "false"
-      KC_HTTP_ENABLED:              "true"
-      KC_PROXY_HEADERS:             xforwarded
-      # Trust X-Forwarded-* headers only from the Docker bridge range (nginx only)
-      KC_PROXY_TRUSTED_ADDRESSES:   172.0.0.0/8
-      # ── Bootstrap admin (effective on FIRST start only) ───────────────────────
-      KC_BOOTSTRAP_ADMIN_USERNAME:  ${KC_BOOTSTRAP_ADMIN_USERNAME}
-      KC_BOOTSTRAP_ADMIN_PASSWORD:  ${KC_BOOTSTRAP_ADMIN_PASSWORD}
-      # ── Observability ────────────────────────────────────────────────────────
-      KC_HEALTH_ENABLED:            "true"
-      KC_METRICS_ENABLED:           "true"
-      # ── Logging ──────────────────────────────────────────────────────────────
-      KC_LOG_CONSOLE_OUTPUT:        json
-      KC_LOG_LEVEL:                 info
-      # ── JVM heap ─────────────────────────────────────────────────────────────
-      JAVA_OPTS_KC_HEAP:            "-Xms512m -Xmx1024m"
+      POSTGRES_USER:        ${POSTGRES_USER}
+      POSTGRES_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:          ${POSTGRES_DB}
+      KRATOS_HOSTNAME:      ${KRATOS_HOSTNAME}
+      FDS_HOSTNAME:         ${FDS_HOSTNAME}
+      KRATOS_COOKIE_SECRET: ${KRATOS_COOKIE_SECRET}
+      KRATOS_CIPHER_SECRET: ${KRATOS_CIPHER_SECRET}
     volumes:
-      # Realm JSONs: auto-imported on first start if realm does not exist
-      - ./realms:/opt/keycloak/data/import:ro
-      - keycloak_data:/opt/keycloak/data
-      - ./keycloak/conf/keycloak.conf:/opt/keycloak/conf/keycloak.conf:ro
-    # expose (container-to-container) only — NOT bound to host
+      - ./kratos/config:/etc/config/kratos:ro
     expose:
-      - "8080"   # application
-      - "9000"   # management (health / metrics)
+      - "4433"   # Public API — nginx proxies this; never bound to host
+    ports:
+      # Admin API — bound to LAN IP so FDS API (Server 2) can reach it over LAN.
+      # Never proxied through Nginx. Firewall restricts to FDS server LAN IP only.
+      - "${KRATOS_ADMIN_BIND_IP}:4434:4434"
     healthcheck:
-      # KC base image (UBI micro) has no curl. Use bash /dev/tcp to check the management port.
-      # Port 9000 only accepts connections once KC is fully ready.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 2>/dev/null && echo OK || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4433/health/ready || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
-      start_period: 60s
+      start_period: 30s
     security_opt:
       - no-new-privileges:true
-    mem_limit: 1536m
-    memswap_limit: 1536m
-    cpus: "2"
 
   # ── Nginx ────────────────────────────────────────────────────────────────────
   nginx:
@@ -116,14 +91,12 @@ services:
     networks:
       - frontend
     depends_on:
-      keycloak:
+      kratos:
         condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
     environment:
-      ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR}
-      ADMIN_ALLOWED_CIDR_2: ${ADMIN_ALLOWED_CIDR_2}
       SSL_CERT_DIR: ${SSL_CERT_DIR}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro

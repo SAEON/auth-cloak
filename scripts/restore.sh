@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Restore the Keycloak PostgreSQL database from a backup file.
+# Restore the Kratos PostgreSQL database from a backup file.
 #
 # Usage:
-#   bash scripts/restore.sh /path/to/keycloak_20260401_020000.dump.gz
+#   bash scripts/restore.sh /path/to/kratos_20260401_020000.dump.gz
 #
-# WARNING: This drops and recreates the Keycloak database.
+# WARNING: This drops and recreates the Kratos database.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -29,20 +29,17 @@ BACKUP_FILE="${1:-}"
 
 echo ""
 warn "This will DROP and RECREATE the '${POSTGRES_DB}' database."
-warn "All current Keycloak data will be replaced by the backup."
+warn "All current Kratos identity data will be replaced by the backup."
 echo "Backup file: ${BACKUP_FILE}"
 echo ""
 read -rp "Type 'yes' to continue: " CONFIRM
 [[ "$CONFIRM" == "yes" ]] || { echo "Aborted."; exit 0; }
 
-# Stop Keycloak if running (ignore error if already stopped)
-info "Stopping Keycloak (if running)..."
-$COMPOSE stop keycloak 2>/dev/null || true
+info "Stopping Kratos (if running)..."
+$COMPOSE stop kratos 2>/dev/null || true
 
-# Ensure PostgreSQL is up
 info "Ensuring PostgreSQL is running..."
 $COMPOSE up -d postgres
-# Wait for it to be ready
 until $COMPOSE exec -T postgres \
         env PGPASSWORD="${POSTGRES_PASSWORD}" \
         pg_isready -U "${POSTGRES_USER}" -d postgres >/dev/null 2>&1; do
@@ -51,7 +48,6 @@ until $COMPOSE exec -T postgres \
 done
 echo ""
 
-# Drop and recreate using dropdb/createdb to avoid transaction block errors
 info "Dropping database '${POSTGRES_DB}'..."
 $COMPOSE exec -T postgres \
     env PGPASSWORD="${POSTGRES_PASSWORD}" \
@@ -72,9 +68,9 @@ gunzip -c "$BACKUP_FILE" | \
         --no-password \
         --exit-on-error
 
-info "Restarting Keycloak..."
-$COMPOSE start keycloak
+info "Restarting Kratos..."
+$COMPOSE start kratos
 
 echo ""
 info "Restore complete. Monitor startup with:"
-echo "  docker compose logs -f keycloak"
+echo "  docker compose logs -f kratos"

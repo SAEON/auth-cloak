@@ -1,83 +1,92 @@
 # Architecture
 
-auth-cloak is a containerised Keycloak 26 deployment. All components run as Docker services on a single host, managed by Docker Compose.
+auth-cloak is a containerised Ory Kratos deployment. All components run as Docker services on a single host, managed by Docker Compose.
 
 ## Stack
 
 | Component | Image | Role |
 |---|---|---|
-| Keycloak 26.1 | `quay.io/keycloak/keycloak:26.1.2` (custom build) | Identity provider |
-| PostgreSQL 16 | `postgres:16-alpine` | Persistent realm and session storage |
-| Nginx 1.27 | `nginx:1.27-alpine` | TLS termination, reverse proxy, access control |
+| Ory Kratos v1.3 | `oryd/kratos:v1.3` | Identity engine — login, session management, identity schema |
+| PostgreSQL 16 | `postgres:16-alpine` | Persistent identity and session storage |
+| Nginx 1.27 | `nginx:1.27-alpine` | TLS termination, reverse proxy |
 
 ## Network diagram
 
 ```
-Internet / clients
+Internet / clients (FDS PWA)
        │
        ▼ 80 / 443
    ┌─────────┐
-   │  Nginx  │   ← TLS termination, rate limiting, admin IP restriction
+   │  Nginx  │   ← TLS termination, rate limiting
    └────┬────┘   frontend network
-        │ http://keycloak:8080
+        │ http://kratos:4433  (Public API — Native flows)
         ▼
    ┌──────────┐
-   │ Keycloak │   ← Identity provider, realm logic, token issuance
+   │  Kratos  │   ← Identity engine, session tokens, identity schema
    └────┬─────┘   frontend + backend networks
-        │ jdbc:postgresql://postgres:5432/keycloak
+        │ postgres://postgres:5432/kratos
         ▼
    ┌──────────┐
    │ Postgres │   ← backend network (internal: true — no internet route)
    └──────────┘
+
+FDS API (Server 2) ──── LAN ────▶ port 4434 on Server 1
+                                   (Kratos Admin API — bound to LAN IP, never proxied)
 ```
 
 ## Docker networks
 
 | Network | Type | Members |
 |---|---|---|
-| `frontend` | bridge (routable) | Nginx, Keycloak |
-| `backend` | bridge + `internal: true` | Keycloak, PostgreSQL |
+| `frontend` | bridge (routable) | Nginx, Kratos |
+| `backend` | bridge + `internal: true` | Kratos, PostgreSQL |
 
-`internal: true` means PostgreSQL has no route to or from the internet or the Docker host. It is reachable only by Keycloak on the `backend` network.
+`internal: true` means PostgreSQL has no route to or from the internet or the Docker host. It is reachable only by Kratos on the `backend` network.
 
 ## Port exposure
 
-| Service | Ports | Bound to host |
+| Service | Port | Bound to host | Reachable by |
+|---|---|---|---|
+| Nginx | 80, 443 | Yes — public-facing | Internet |
+| Kratos Public API | 4433 | No — `expose:` only | Nginx (via Docker network) |
+| Kratos Admin API | 4434 | Yes — LAN IP only | FDS API (Server 2) over LAN |
+| PostgreSQL | 5432 | No — internal network | Kratos only |
+
+## Two APIs — different trust levels
+
+Kratos exposes two separate HTTP APIs. This distinction is the most important security boundary in the system.
+
+| | Public API (:4433) | Admin API (:4434) |
 |---|---|---|
-| Nginx | 80 (HTTP), 443 (HTTPS) | Yes — public-facing |
-| Keycloak | 8080 (app), 9000 (management) | No — `expose:` only, container-to-container |
-| PostgreSQL | 5432 | No — internal network, no host binding |
+| Who calls it | FDS PWA directly | FDS API (server-to-server, LAN only) |
+| Auth required | No — this is how login itself works | No built-in auth — trust is enforced by network isolation |
+| Exposure | Proxied through Nginx under `/identity/` | Bound to LAN IP, never proxied through Nginx |
+| If exposed publicly | Expected — intended design | Anyone could create, modify, or delete any identity |
 
-## Realm design
+**The Admin API (port 4434) must never appear in any Nginx location block and must never be reachable from the public internet.** Network isolation and the UFW rule restricting access to the FDS server LAN IP are the only protection.
 
-Two realms serve distinct audiences. The master realm is admin-only and never used for application authentication.
+## Native (API-only) flows
 
-| Realm | Audience | Registration | Email verification | Lockout |
-|---|---|---|---|---|
-| `saeon-internal` | SAEON staff | Admin-provisioned only | Required on first login | Permanent (admin must unlock) |
-| `saeon-external` | External researchers + self-registered guests | Open self-registration | Disabled | Temporary (900s, resets after 12h) |
+Kratos is used exclusively in Native mode. Unlike OIDC browser flows, Native flows are pure JSON REST calls:
 
-### Why two realms?
+1. PWA calls `GET /identity/self-service/login/api` → Kratos returns a flow ID
+2. PWA calls `POST /identity/self-service/login?flow=<id>` with `{method: "password", identifier, password}` → Kratos returns a session token
+3. PWA attaches the session token as `Authorization: Bearer <token>` on every FDS API request
+4. FDS API validates the token by calling `GET /sessions/whoami` on the Admin API (LAN)
 
-- **Different security postures** — internal staff require stricter passwords (12 chars, 180-day expiry, history), permanent lockout, and no self-registration.
-- **Separate session lifetimes** — internal: 8h SSO; external: 30-day idle.
-- **Clean scope separation** — clients in each realm inherit only that realm's roles and scopes.
-- **Independent brute-force config** — tightening internal policy does not affect external users.
+No browser redirects. No cross-domain query strings. The WAF signature (Fortinet rule 60140003) never triggers.
 
-## Custom OIDC claims
+## Identity schema
 
-The `saeon-profile` client scope is added to all `saeon-external` clients by default. It exposes user attributes as JWT claims:
+FDS uses a single identity schema (`fds-identity`) with three fields:
 
-| Claim | User attribute | Notes |
-|---|---|---|
-| `institution` | `institution` | Required at registration |
-| `user_type` | `user_type` | `guest` (default) or `external-user`; admin-editable |
-| `student_status` | `student_status` | Select: `yes`, `no`, `na`; optional |
-| `age_group` | `age_group` | Select: `under-18` … `65+`; optional |
-| `race` | `race` | Free text; optional |
-| `gender` | `gender` | Free text; optional |
+| Field | Required | Type | Notes |
+|---|---|---|---|
+| `email` | Yes | string (email format) | Login identifier |
+| `name` | No | string | Full name |
+| `role` | Yes | enum | `technician`, `technician_lead`, `data_manager` |
 
-All claims appear in the ID token, access token, and userinfo endpoint.
+User accounts are admin-provisioned only (self-registration is disabled). New accounts are created via the Admin API by the FDS API on behalf of authorised `data_manager` and `technician_lead` users.
 
 ## Security layers
 
@@ -88,39 +97,19 @@ Client request
 [Nginx]
   - TLS 1.2+ with strong cipher suite
   - HSTS (2 years + preload)
-  - Security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy)
-  - /admin and /realms/master: allow LAN/VPN only, deny all others (HTTP 403)
-  - /metrics: deny all
-  - Rate limiting: 20 r/s global, 5 r/s token/login, 2 r/s admin
+  - Security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
+  - Rate limiting: 5 r/s on /identity/ endpoints
+  - All other paths → 404
     │
     ▼
-[Keycloak]
-  - Brute-force protection per realm
-  - Access token TTL: 5 min
-  - Required actions: Terms & Conditions, profile completion
-  - X-Forwarded-* headers trusted only from Docker bridge range (nginx only)
+[Kratos Public API — port 4433]
+  - Native-only flows (no browser redirects)
+  - Argon2 password hashing
+  - Session token lifespan: 24h
+  - Self-registration: disabled
     │
     ▼
 [PostgreSQL]
   - Internal Docker network (no internet route)
   - Password-authenticated connections only
-  - Connection pool: 5–50 connections
 ```
-
-## Keycloak build
-
-A two-stage Docker build produces an optimized image:
-
-```dockerfile
-# Stage 1 — Quarkus augmentation (resolves all classpath at build time)
-FROM quay.io/keycloak/keycloak:26.1.2 AS builder
-ENV KC_DB=postgres
-RUN /opt/keycloak/bin/kc.sh build
-
-# Stage 2 — Runtime image (only compiled quarkus artifacts copied)
-FROM quay.io/keycloak/keycloak:26.1.2
-COPY --from=builder /opt/keycloak/lib/quarkus/ /opt/keycloak/lib/quarkus/
-CMD ["start", "--optimized", "--import-realm"]
-```
-
-`--optimized` skips the Quarkus build step at startup (already baked in). `--import-realm` auto-imports realm JSON files from `/opt/keycloak/data/import/` on first start; existing realms are skipped on subsequent starts.

@@ -1,0 +1,40 @@
+{
+  "$id": "https://auth.example.org/schemas/fds-identity.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FDS Identity",
+  "type": "object",
+  "properties": {
+    "traits": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "title": "Email",
+          "ory.sh/kratos": {
+            "credentials": {
+              "password": { "identifier": true }
+            },
+            "verification": {
+              "via": "email"
+            },
+            "recovery": {
+              "via": "email"
+            }
+          }
+        },
+        "name": {
+          "type": "string",
+          "title": "Full name"
+        },
+        "role": {
+          "type": "string",
+          "title": "Role",
+          "enum": ["technician", "technician_lead", "data_manager"]
+        }
+      },
+      "required": ["email", "role"],
+      "additionalProperties": false
+    }
+  }
+}

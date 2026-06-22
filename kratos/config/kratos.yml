@@ -1,0 +1,97 @@
+version: v0.13.0
+
+dsn: postgres://${POSTGRES_USER}:${POSTGRES_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&max_conns=10&max_idle_conns=4
+
+serve:
+  public:
+    base_url: https://${KRATOS_HOSTNAME}/identity/
+    cors:
+      enabled: true
+      allowed_origins:
+        - https://${FDS_HOSTNAME}
+      allowed_methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      allowed_headers:
+        - Authorization
+        - Content-Type
+        - X-Session-Token
+      exposed_headers:
+        - Content-Type
+      allow_credentials: true
+  admin:
+    base_url: http://0.0.0.0:4434/
+
+selfservice:
+  default_browser_return_url: https://${FDS_HOSTNAME}/
+  allowed_return_urls:
+    - https://${FDS_HOSTNAME}
+
+  flows:
+    login:
+      # ui_url is required but never used in Native mode — PWA calls the API directly
+      ui_url: https://${FDS_HOSTNAME}/login
+      lifespan: 10m
+
+    registration:
+      ui_url: https://${FDS_HOSTNAME}/register
+      lifespan: 10m
+      # Registration disabled — accounts are created via Admin API only
+      enabled: false
+
+    settings:
+      ui_url: https://${FDS_HOSTNAME}/settings
+      privileged_session_max_age: 15m
+
+    recovery:
+      enabled: false
+      ui_url: https://${FDS_HOSTNAME}/recovery
+
+    verification:
+      enabled: false
+      ui_url: https://${FDS_HOSTNAME}/verification
+
+  methods:
+    password:
+      enabled: true
+      config:
+        # Argon2 tuning — conservative defaults for single-node server
+        min_password_length: 8
+        identifier_similarity_check_enabled: true
+
+identity:
+  default_schema_id: fds-identity
+  schemas:
+    - id: fds-identity
+      url: file:///etc/config/kratos/identity.schema.json
+
+session:
+  lifespan: 24h
+  cookie:
+    same_site: None
+
+log:
+  level: info
+  format: json
+  leak_sensitive_values: false
+
+secrets:
+  cookie:
+    - ${KRATOS_COOKIE_SECRET}
+  cipher:
+    - ${KRATOS_CIPHER_SECRET}
+
+ciphers:
+  algorithm: xchacha20-poly1305
+
+hashers:
+  algorithm: argon2
+  argon2:
+    parallelism: 1
+    memory: 131072   # 128 MB
+    iterations: 3
+    salt_length: 16
+    key_length: 32

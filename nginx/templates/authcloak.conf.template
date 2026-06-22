@@ -47,7 +47,6 @@ server {
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-Host  $forwarded_host;
     proxy_set_header X-Forwarded-Port  $server_port;
 
     proxy_buffer_size        128k;
@@ -57,36 +56,17 @@ server {
     proxy_send_timeout       90s;
     proxy_read_timeout       90s;
 
-    # ── Admin console — restricted to ADMIN_ALLOWED_CIDR ─────────────────────
-    # Set ADMIN_ALLOWED_CIDR in .env to your LAN/VPN subnet.
-    location ~ ^/(admin|realms/master) {
-        allow ${ADMIN_ALLOWED_CIDR};
-        allow ${ADMIN_ALLOWED_CIDR_2};
-        allow 127.0.0.1;
-        deny  all;
-
-        limit_req zone=admin burst=20 nodelay;
-        limit_req_log_level warn;
-
-        proxy_pass http://keycloak:8080;
-    }
-
-    # ── Token / login endpoints — stricter rate limit ─────────────────────────
-    location ~ ^/realms/[^/]+/(protocol/openid-connect/token|login-actions) {
+    # ── Kratos Public API (Native flows only) ─────────────────────────────────
+    # Admin API (port 4434) is NOT proxied here — it is only accessible over LAN
+    location /identity/ {
         limit_req zone=auth burst=10 nodelay;
         limit_req_log_level warn;
 
-        proxy_pass http://keycloak:8080;
+        proxy_pass http://kratos:4433/;
     }
 
-    # ── Block metrics from public ─────────────────────────────────────────────
-    location /metrics {
-        deny all;
-    }
-
-    # ── All other Keycloak traffic ────────────────────────────────────────────
+    # ── Block everything else ─────────────────────────────────────────────────
     location / {
-        limit_req zone=global burst=30 nodelay;
-        proxy_pass http://keycloak:8080;
+        return 404;
     }
 }

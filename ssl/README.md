@@ -18,12 +18,12 @@ certbot certonly --standalone --non-interactive --agree-tos \
 Certbot places the certs at `/etc/letsencrypt/live/auth.example.org/`. The Nginx container mounts that directory directly:
 
 ```
-/etc/letsencrypt/live/<KC_HOSTNAME>/fullchain.pem   ← certificate + intermediates
-/etc/letsencrypt/live/<KC_HOSTNAME>/privkey.pem      ← private key
-/etc/letsencrypt/live/<KC_HOSTNAME>/chain.pem        ← intermediates only (for OCSP stapling)
+/etc/letsencrypt/live/<KRATOS_HOSTNAME>/fullchain.pem   ← certificate + intermediates
+/etc/letsencrypt/live/<KRATOS_HOSTNAME>/privkey.pem      ← private key
+/etc/letsencrypt/live/<KRATOS_HOSTNAME>/chain.pem        ← intermediates only (for OCSP stapling)
 ```
 
-Set `SSL_CERT_DIR=/etc/letsencrypt/live/<KC_HOSTNAME>` in `.env` — this must match the certbot directory name exactly. `deploy.sh` checks for all three files before starting.
+Set `SSL_CERT_DIR=/etc/letsencrypt/live/<KRATOS_HOSTNAME>` in `.env` — this must match the certbot directory name exactly. `deploy.sh` checks for all three files before starting.
 
 ### Certificate renewal
 
@@ -62,8 +62,6 @@ sudo cp /etc/letsencrypt/live/localhost/fullchain.pem /etc/letsencrypt/live/loca
 Then in `.env`:
 
 ```
-KC_HOSTNAME=localhost
+KRATOS_HOSTNAME=localhost
 SSL_CERT_DIR=/etc/letsencrypt/live/localhost
 ```
-
-The Nginx container mounts `SSL_CERT_DIR` at `/etc/nginx/ssl` — this works identically for local and prod.

@@ -1,39 +1,29 @@
 # auth-cloak
 
-A production-ready Keycloak 26 deployment for SAEON, providing centralised authentication for internal staff applications and public-facing data portals. All components run in Docker containers on a single host: Nginx handles TLS termination and access control, Keycloak manages identity and token issuance, and PostgreSQL provides persistent storage — all isolated from each other via Docker networks.
+A production-ready Ory Kratos deployment for SAEON, providing centralised authentication for the FDS (Field Data System). All components run in Docker containers on a single host: Nginx handles TLS termination, Kratos manages identity and session tokens, and PostgreSQL provides persistent storage.
 
-- [Architecture](docs/architecture.md) — stack, network diagram, realm design, security layers
+- [Architecture](docs/architecture.md) — stack, network diagram, identity schema, security layers
 - [Deployment runbook](docs/deployment.md) — first-time setup, post-deploy steps, operations reference
 
 ---
 
-## Realms
+## Why Kratos instead of Keycloak
 
-| Realm | Audience | Registration | Notes |
-|---|---|---|---|
-| `saeon-internal` | SAEON staff | Admin-provisioned | Staff email domain only; no email verification; permanent lockout; 8h SSO |
-| `saeon-external` | External researchers + guests | Open self-registration | No email verification; T&C required; 30-day idle session |
+SAEON's Fortinet WAF blocks Keycloak's OIDC authorization-code redirect flow (rule 60140003) on all SAEON-managed domains. Kratos Native (API-only) flows are pure JSON REST calls — no browser redirects, no cross-domain query strings — so the WAF signature never triggers.
 
-The **master** realm is used only for Keycloak administration — never for application authentication.
+---
 
-### `saeon-external` user profile
+## Identity schema
 
-Fields collected at registration:
+FDS uses a single identity schema with three roles:
 
-| Field | Required | Type |
+| Role | Created by | Capabilities |
 |---|---|---|
-| First name | Yes | Text |
-| Last name | Yes | Text |
-| Email | Yes | Text |
-| Institution | Yes | Text |
-| Are you a student? | No | Select: `yes` / `no` / `na` |
-| Age group | No | Select: `under-18` … `65+` |
-| Race | No | Free text |
-| Gender | No | Free text |
+| `technician` | `technician_lead` or `data_manager` | Submit field observations |
+| `technician_lead` | `data_manager` | Submit observations + create `technician` accounts |
+| `data_manager` | Admin API (seeded at deploy time) | Full access + create any account |
 
-All fields (plus `user_type`) are included in access tokens via the `saeon-profile` scope.
-
-> **Note on built-in scopes:** Keycloak's built-in client scopes (`profile`, `email`, `roles`, `web-origins`) are not created automatically during realm JSON import. After first deploy, add them manually in Admin UI → saeon-external → Client scopes, or assign them to each client individually. See the [deployment runbook](docs/deployment.md#5e-add-built-in-client-scopes-to-saeon-external) for details.
+All accounts are admin-provisioned. Self-registration is disabled.
 
 ---
 
@@ -42,7 +32,6 @@ All fields (plus `user_type`) are included in access tokens via the `saeon-profi
 ### 1. Generate SSL certs and configure `.env`
 
 ```bash
-# Create certs using the same filenames as prod
 sudo mkdir -p /etc/letsencrypt/live/localhost
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /etc/letsencrypt/live/localhost/privkey.pem \
@@ -50,40 +39,54 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -subj "/CN=localhost"
 sudo cp /etc/letsencrypt/live/localhost/fullchain.pem /etc/letsencrypt/live/localhost/chain.pem
 
-# Configure .env
 cp .env.example .env
-sed -i 's|KC_HOSTNAME=.*|KC_HOSTNAME=localhost|' .env
-sed -i 's|SSL_CERT_DIR=.*|SSL_CERT_DIR=/etc/letsencrypt/live/localhost|' .env
+# Edit .env:
+#   KRATOS_HOSTNAME=localhost
+#   FDS_HOSTNAME=localhost
+#   SSL_CERT_DIR=/etc/letsencrypt/live/localhost
+#   KRATOS_ADMIN_BIND_IP=127.0.0.1
 ```
 
-### 2. Start the stack
+### 2. Run migrations and start the stack
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
-```
+# Run DB migrations (first time only)
+docker compose run --rm kratos migrate sql -e --yes
 
-The local override sets `KC_HOSTNAME_STRICT=false` and `ADMIN_ALLOWED_CIDR=0.0.0.0/0` (no IP restriction on admin).
+# Start all services
+docker compose up -d
+```
 
 ### 3. Verify containers are healthy
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml ps
+docker compose ps
 ```
 
-All three containers (`postgres`, `keycloak`, `nginx`) should show `Up (healthy)`. Keycloak can take up to 2 minutes on first start.
+All three containers (`postgres`, `kratos`, `nginx`) should show `Up (healthy)`.
 
-### 4. Access from Windows (Chrome)
+### 4. Test Native login flow
 
-Keycloak requires HTTPS. To access from a Windows browser while running in WSL:
+```bash
+# Seed a test account
+curl -s -X POST http://127.0.0.1:4434/admin/identities \
+  -H "Content-Type: application/json" \
+  -d '{"schema_id":"fds-identity","traits":{"email":"test@example.org","name":"Test","role":"data_manager"},"credentials":{"password":{"config":{"password":"Password1!"}}}}'
 
-1. Find your WSL IP: `ip addr show eth0 | grep 'inet '`
-2. Open Chrome at `https://<wsl-ip>` (accept the self-signed cert warning)
-3. Admin console: `https://<wsl-ip>/admin`
+# Get a flow ID
+FLOW=$(curl -sk https://localhost/identity/self-service/login/api | jq -r '.id')
+
+# Log in
+curl -sk -X POST "https://localhost/identity/self-service/login?flow=${FLOW}" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"password","identifier":"test@example.org","password":"Password1!"}' \
+  | jq '{session_token, identity: .session.identity.traits}'
+```
 
 ### 5. Stop the stack
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml down
+docker compose down
 ```
 
 ---
@@ -94,117 +97,90 @@ All configuration is in `.env` (gitignored). Copy `.env.example` and fill in val
 
 | Variable | Description | Example |
 |---|---|---|
-| `POSTGRES_DB` | Database name | `keycloak` |
-| `POSTGRES_USER` | DB username | `keycloak` |
-| `POSTGRES_PASSWORD` | DB password — generate with `openssl rand -base64 32` | |
-| `KC_BOOTSTRAP_ADMIN_USERNAME` | Initial admin username — effective on first start only | `admin` |
-| `KC_BOOTSTRAP_ADMIN_PASSWORD` | Initial admin password — change immediately after first login | |
-| `KC_HOSTNAME` | Public hostname — must match your SSL cert | `auth.example.org` |
-| `ADMIN_ALLOWED_CIDR` | Primary CIDR allowed to reach `/admin` — set to your LAN/VPN subnet | `10.0.0.0/24` |
-| `ADMIN_ALLOWED_CIDR_2` | Optional second CIDR (e.g. VPN range) — defaults to `127.0.0.1` | `10.8.0.0/24` |
-| `SSL_CERT_DIR` | Host path containing `fullchain.pem`, `privkey.pem`, `chain.pem` | `/etc/letsencrypt/live/auth.example.org` |
+| `POSTGRES_DB` | Database name | `kratos` |
+| `POSTGRES_USER` | DB username | `kratos` |
+| `POSTGRES_PASSWORD` | DB password — auto-generated by `deploy.sh` | |
+| `KRATOS_HOSTNAME` | Public hostname — must match your SSL cert | `auth.example.org` |
+| `FDS_HOSTNAME` | FDS app hostname — used for CORS | `fds.example.org` |
+| `KRATOS_COOKIE_SECRET` | Hex secret for signing session cookies — auto-generated | |
+| `KRATOS_CIPHER_SECRET` | Hex secret for encrypting sensitive data — auto-generated | |
+| `KRATOS_ADMIN_BIND_IP` | Server LAN IP — Admin API (4434) is bound here | `192.168.x.x` |
+| `SSL_CERT_DIR` | Host path to `fullchain.pem`, `privkey.pem`, `chain.pem` | `/etc/letsencrypt/live/auth.example.org` |
 | `BACKUP_DIR` | Where backup files are written | `/opt/apps/auth-cloak/backups` |
 | `BACKUP_RETENTION_DAYS` | Backup files older than this are deleted | `30` |
-| `SMTP_HOST` | SMTP server for password-reset emails | |
-| `SMTP_PORT` | SMTP port | `587` |
-| `SMTP_USER` | SMTP username | |
-| `SMTP_PASSWORD` | SMTP password | |
-| `SMTP_FROM` | Sender address | `no-reply@example.org` |
 
-> SMTP is optional at deploy time. Until configured, password reset emails will not be sent. When available, set the variables and configure the SMTP settings in Admin UI → Realm Settings → Email.
-
-### SSL certificates
-
-Production certificates are managed by the Linux admin via Let's Encrypt. The Nginx container mounts them directly from the host:
-
-```
-/etc/letsencrypt/live/<KC_HOSTNAME>/fullchain.pem
-/etc/letsencrypt/live/<KC_HOSTNAME>/privkey.pem
-/etc/letsencrypt/live/<KC_HOSTNAME>/chain.pem
-```
-
-`KC_HOSTNAME` in `.env` must match the Let's Encrypt directory name. See [ssl/README.md](ssl/README.md) for the certbot renewal hook setup.
+> Changing `KRATOS_COOKIE_SECRET` or `KRATOS_CIPHER_SECRET` after first deploy will invalidate all active user sessions.
 
 ---
 
-## Client integration
+## FDS integration
 
-### Which realm to use
-
-| App type | Realm |
-|---|---|
-| Internal staff tools | `saeon-internal` |
-| Public data portals, catalogue | `saeon-external` |
-
-### OIDC discovery URLs
-
-```
-https://auth.example.org/realms/saeon-internal/.well-known/openid-configuration
-https://auth.example.org/realms/saeon-external/.well-known/openid-configuration
-```
-
-### Registering a client (Admin UI)
-
-1. Select the target realm
-2. **Clients** → **Create client**
-3. Client type: `OpenID Connect`
-4. Client ID: choose a short, app-specific name (e.g. `saeon-catalogue`)
-5. **Standard flow**: enabled; **Direct access grants**: disabled
-6. Set **Valid redirect URIs** and **Web origins** to your app's exact URL — no wildcards in production
-7. Add `saeon-profile` to **Default client scopes** for any external-realm client that needs demographic claims
-
-### Browser apps (React, Vue, etc.) — Authorization Code + PKCE
+### PWA (Native login flow)
 
 ```js
-import Keycloak from 'keycloak-js'
+// Step 1: initiate flow
+const { id: flowId } = await fetch(
+  'https://auth.example.org/identity/self-service/login/api'
+).then(r => r.json())
 
-const kc = new Keycloak({
-  url: 'https://auth.example.org',
-  realm: 'saeon-external',
-  clientId: 'saeon-catalogue',
+// Step 2: submit credentials
+const { session_token } = await fetch(
+  `https://auth.example.org/identity/self-service/login?flow=${flowId}`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'password', identifier: email, password }),
+  }
+).then(r => r.json())
+
+// Step 3: attach to every API request
+fetch('/api/visits', {
+  headers: { Authorization: `Bearer ${session_token}` },
 })
-
-// Restores existing session silently; redirects to login only when the app calls kc.login()
-await kc.init({ onLoad: 'check-sso', silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html' })
 ```
 
-Trigger login on a protected action (e.g. download button):
+No redirects. No `keycloak-js`. No WAF block.
+
+### API (session verification)
 
 ```js
-if (!kc.authenticated) {
-  kc.login({ redirectUri: window.location.href })
-  return
-}
-await kc.updateToken(30)   // refresh if within 30s of expiry
-const token = kc.token     // Bearer token for API calls
-```
+// api/src/middleware/auth.js
+async function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1]
+  if (!token) return res.status(401).json({ error: 'Missing session token' })
 
-### Backend API token validation
+  const resp = await fetch(`${process.env.KRATOS_PUBLIC_URL}/sessions/whoami`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!resp.ok) return res.status(401).json({ error: 'Invalid or expired session' })
 
-Validate the JWT before serving protected resources:
-
-1. Fetch public keys: `https://auth.example.org/realms/saeon-external/protocol/openid-connect/certs`
-2. Verify the JWT signature and expiry
-3. Extract claims from the verified payload
-
-Common libraries: `python-jose` (Python), `jsonwebtoken` (Node.js), `java-jwt` (Java).
-
-### Token claims (`saeon-profile` scope)
-
-```json
-{
-  "sub": "<user-uuid>",
-  "email": "user@example.com",
-  "given_name": "Jane",
-  "family_name": "Doe",
-  "institution": "University of Example",
-  "user_type": "guest",
-  "student_status": "no",
-  "age_group": "25-34",
-  "race": "...",
-  "gender": "..."
+  const { identity } = await resp.json()
+  req.user = { id: identity.id, ...identity.traits }
+  next()
 }
 ```
+
+`KRATOS_PUBLIC_URL` on Server 2 should be `http://<auth-server-lan-ip>:4433` (LAN, bypasses Nginx overhead).
+
+### Account creation (Admin API, server-to-server only)
+
+```js
+// api/src/services/identityService.js
+async function createIdentity({ email, name, role, password }) {
+  const resp = await fetch(`${process.env.KRATOS_ADMIN_URL}/admin/identities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      schema_id: 'fds-identity',
+      traits: { email, name, role },
+      credentials: { password: { config: { password } } },
+    }),
+  })
+  return resp.json()
+}
+```
+
+`KRATOS_ADMIN_URL` must be `http://<auth-server-lan-ip>:4434` — the Admin API is never proxied through Nginx and must never be called from the browser.
 
 ---
 
@@ -215,13 +191,10 @@ Common libraries: `python-jose` (Python), `jsonwebtoken` (Node.js), `java-jwt` (
 bash scripts/backup.sh
 
 # Restore (drops + recreates DB — prompts for confirmation)
-bash scripts/restore.sh /opt/apps/auth-cloak/backups/keycloak_20260401_020000.dump.gz
-
-# Upgrade Keycloak (reads migration notes prompt, takes pre-upgrade backup)
-bash scripts/update-keycloak.sh 26.2.0
+bash scripts/restore.sh /opt/apps/auth-cloak/backups/kratos_20260401_020000.dump.gz
 
 # View logs
-docker compose logs -f keycloak
+docker compose logs -f kratos
 docker compose logs -f nginx
 
 # Reload Nginx config (e.g. after cert renewal — no downtime)
@@ -235,67 +208,57 @@ docker compose ps
 
 ## Security
 
-### Admin access
+### Admin API isolation
 
-The Nginx config restricts `/admin` and `/realms/master` to `ADMIN_ALLOWED_CIDR` and `ADMIN_ALLOWED_CIDR_2` (your LAN/VPN subnets). All other sources receive HTTP 403 before the request reaches Keycloak. Update these values in `.env` and run `docker compose up -d nginx` if the subnet changes.
+The Kratos Admin API (port 4434) has no built-in authentication. Network isolation is the only protection:
+- Bound to the server's internal LAN IP (`KRATOS_ADMIN_BIND_IP`) — not `0.0.0.0`
+- Never proxied through Nginx
+- UFW rule restricts access to the FDS server's LAN IP only: `ufw allow from <fds-lan-ip> to any port 4434`
 
 ### Post-deploy checklist
 
-- [ ] Change bootstrap admin password immediately after first login
-- [ ] Create permanent admin user with TOTP (2FA) enforced
-- [ ] Disable/delete bootstrap admin account
-- [ ] Confirm `/admin` returns 403 from an external IP
-- [ ] Set **Require SSL = All requests** on both custom realms
-- [ ] Enable event logging (Admin UI → Events → Config → Save Events ON, 90-day expiry)
+- [ ] Seed first `data_manager` account via Admin API
+- [ ] Test Native login flow end-to-end (flow init → credentials → session token)
+- [ ] Confirm FDS server can reach Admin API on port 4434 over LAN
+- [ ] Confirm Admin API is NOT reachable via `https://<hostname>/identity/admin/`
 - [ ] Set up backup cron: `0 2 * * * /opt/apps/auth-cloak/scripts/backup.sh >> /var/log/auth-cloak-backup.log 2>&1`
 - [ ] Configure Docker log rotation in `/etc/docker/daemon.json`
-- [ ] Register application clients with explicit redirect URIs (no wildcards)
-- [ ] Configure SMTP when available
+- [ ] Set `KRATOS_ADMIN_BIND_IP` to the server's actual LAN IP (not `127.0.0.1`) when FDS API access is needed
 
 ### Secrets management
 
 - `.env` is gitignored — never commit it
-- SSL certs live at `SSL_CERT_DIR` on the host (outside the repo) — never committed
-- `deploy.sh` generates secrets with `openssl rand` on first run
-- Rotate `POSTGRES_PASSWORD` and `KC_BOOTSTRAP_ADMIN_PASSWORD` by updating `.env` and redeploying
+- SSL certs live at `SSL_CERT_DIR` on the host — never committed
+- `deploy.sh` generates `POSTGRES_PASSWORD`, `KRATOS_COOKIE_SECRET`, and `KRATOS_CIPHER_SECRET` with `openssl rand -hex 32` on first run
+- Changing secrets after first deploy invalidates active sessions
 
 ---
 
 ## Troubleshooting
 
-**Keycloak container stays unhealthy**
+**Kratos container stays unhealthy**
 
 ```bash
-docker compose logs keycloak | tail -50
+docker compose logs kratos | tail -50
 ```
 
-Common causes: PostgreSQL not yet ready (wait a bit and retry), wrong `KC_HOSTNAME` (must match the host nginx uses), missing environment variables.
+Common causes: PostgreSQL not yet ready, wrong `DSN` in `kratos.yml`, migrations not run (`docker compose run --rm kratos migrate sql -e --yes`).
 
-**`invalid_scope` on token request**
+**Login flow returns 400**
 
-Built-in scopes (`profile`, `email`, `roles`, `web-origins`) were not created during import. Add them in Admin UI → Client scopes, then assign to the client.
+Check the flow response body — Kratos returns structured validation errors:
+```bash
+curl -s https://auth.example.org/identity/self-service/login/api | jq '.ui.messages'
+```
 
-**403 on `/admin` from within the LAN**
+**Admin API returns connection refused from FDS server**
 
-Check `ADMIN_ALLOWED_CIDR` in `.env` matches your actual LAN/VPN subnet. After changing it, redeploy Nginx: `docker compose up -d nginx`.
+Verify `KRATOS_ADMIN_BIND_IP` in `.env` matches the server's actual LAN IP, and that the UFW rule allows the FDS server's LAN IP on port 4434.
 
 **SSL certificate errors**
 
-Verify the cert covers the hostname in `KC_HOSTNAME`. Check the files exist in `SSL_CERT_DIR`:
-
+Check the files exist in `SSL_CERT_DIR`:
 ```bash
 ls -la $SSL_CERT_DIR
 # fullchain.pem, privkey.pem, chain.pem must all be present
 ```
-
-**`SMTP_FROM_DISPLAY_NAME` causes bash error**
-
-The value must be quoted in `.env`:
-
-```
-SMTP_FROM_DISPLAY_NAME="SAEON Auth"
-```
-
-**Password reset emails not sending**
-
-SMTP is not configured. Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` in `.env`, then configure Realm Settings → Email in Admin UI.
