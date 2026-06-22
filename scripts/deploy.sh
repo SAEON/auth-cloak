@@ -51,7 +51,7 @@ if grep -q "CHANGE_ME_cookie_secret" .env; then
 fi
 
 if grep -q "CHANGE_ME_cipher_secret" .env; then
-    sed -i "s/CHANGE_ME_cipher_secret/$(openssl rand -hex 32)/" .env
+    sed -i "s/CHANGE_ME_cipher_secret/$(openssl rand -hex 16)/" .env
     info "Generated KRATOS_CIPHER_SECRET."
 fi
 
