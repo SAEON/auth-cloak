@@ -70,8 +70,8 @@ services:
       KRATOS_SELFSERVICE_FLOWS_VERIFICATION_UI_URL:        https://${FDS_HOSTNAME}/verification
     volumes:
       - ./kratos/config:/etc/config/kratos:ro
-    expose:
-      - "4433"   # Public API — nginx proxies this; never bound to host
+    ports:
+      - "${KRATOS_ADMIN_BIND_IP}:4433:4433"  # Public API — nginx proxies externally; FDS API calls directly over LAN
     ports:
       # Admin API — bound to LAN IP so FDS API (Server 2) can reach it over LAN.
       # Never proxied through Nginx. Firewall restricts to FDS server LAN IP only.
