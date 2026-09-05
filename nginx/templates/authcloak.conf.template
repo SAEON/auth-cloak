@@ -54,7 +54,7 @@ server {
 
     # ── Kratos Public API (Native flows only) ─────────────────────────────────
     # Admin API (port 4434) is NOT proxied here — it is only accessible over LAN
-    location /identity/ {
+    location /svc/ {
         limit_req zone=auth burst=10 nodelay;
         limit_req_log_level warn;
 
