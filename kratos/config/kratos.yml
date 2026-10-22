@@ -62,7 +62,7 @@ identity:
       url: file:///etc/config/kratos/identity.schema.json
 
 session:
-  lifespan: 720h                 # 30 days — covers a full field trip without re-auth
+  lifespan: 1440h                # 60 days — covers field seasons
   earliest_possible_extend: 24h  # sessions can be extended at most once per 24 h
   cookie:
     persistent: true             # sets Max-Age so cookie survives browser/app restarts
