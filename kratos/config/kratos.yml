@@ -59,7 +59,10 @@ identity:
   default_schema_id: fds-identity
   schemas:
     - id: fds-identity
-      url: file:///etc/config/kratos/identity.schema.json
+      url: file:///etc/config/kratos/fds-identity.schema.json
+    # Add more schemas here as new apps are onboarded:
+    # - id: sarva-identity
+    #   url: file:///etc/config/kratos/sarva-identity.schema.json
 
 session:
   lifespan: 1440h                # 60 days — covers field seasons
