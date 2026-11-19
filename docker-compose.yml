@@ -49,7 +49,7 @@ services:
     image: oryd/kratos:v1.3
     container_name: auth-cloak-kratos
     restart: unless-stopped
-    command: serve -c /etc/config/kratos/kratos.yml -c /etc/config/kratos/kratos.secrets.yml --dev=false
+    command: serve -c /etc/config/kratos/kratos.yml -c /etc/config/kratos/kratos.secrets.yml -c /etc/config/kratos/kratos.hooks.yml --dev=false
     networks:
       - frontend
       - backend
@@ -68,6 +68,7 @@ services:
       KRATOS_SELFSERVICE_FLOWS_VERIFICATION_UI_URL:   https://${FDS_HOSTNAME}/verification
     volumes:
       - ./kratos/config:/etc/config/kratos:ro
+      - ./kratos/config/hooks:/etc/config/kratos/hooks:ro
     ports:
       - "${KRATOS_ADMIN_BIND_IP}:4433:4433"
       - "${KRATOS_ADMIN_BIND_IP}:4434:4434"

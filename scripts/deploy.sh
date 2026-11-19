@@ -55,6 +55,11 @@ if grep -q "CHANGE_ME_cipher_secret" .env; then
     info "Generated KRATOS_CIPHER_SECRET."
 fi
 
+if grep -q "CHANGE_ME_hook_secret" .env; then
+    sed -i "s/CHANGE_ME_hook_secret/$(openssl rand -hex 32)/" .env
+    info "Generated KRATOS_HOOK_SECRET."
+fi
+
 # Load env for validation steps
 set -o allexport
 source .env
@@ -106,6 +111,31 @@ secrets:
 EOF
 chmod 600 kratos/config/kratos.secrets.yml
 info "kratos/config/kratos.secrets.yml written."
+
+step "Generating Kratos hooks config"
+HOOK_URL="${KRATOS_HOOK_URL:-https://${FDS_HOSTNAME}/api/hooks/login}"
+
+cat > kratos/config/kratos.hooks.yml <<EOF
+selfservice:
+  flows:
+    login:
+      after:
+        password:
+          hooks:
+            - hook: web_hook
+              config:
+                url: ${HOOK_URL}
+                method: POST
+                auth:
+                  type: api_key
+                  config:
+                    name: X-Hook-Token
+                    value: ${KRATOS_HOOK_SECRET}
+                    in: header
+                body: file:///etc/config/kratos/hooks/login-event.jsonnet
+EOF
+chmod 644 kratos/config/kratos.hooks.yml
+info "kratos/config/kratos.hooks.yml written."
 
 # ── Pull images ───────────────────────────────────────────────────────────────
 step "Pulling images"

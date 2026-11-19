@@ -60,6 +60,8 @@ identity:
   schemas:
     - id: fds-identity
       url: file:///etc/config/kratos/fds-identity.schema.json
+    - id: edsl-identity
+      url: file:///etc/config/kratos/edsl-identity.schema.json
     # Add more schemas here as new apps are onboarded:
     # - id: sarva-identity
     #   url: file:///etc/config/kratos/sarva-identity.schema.json
